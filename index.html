@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conway's Game of Life</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        .header {
+            text-align: center;
+            margin: 20px 0;
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        }
+
+        .info {
+            font-size: 0.9em;
+            color: #aaa;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        #gameCanvas {
+            border: 2px solid #ffd700;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+            cursor: pointer;
+            background: #000;
+        }
+
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        button {
+            background: #ffd700;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1em;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        button:hover {
+            background: #ffed4e;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .stats {
+            color: #ffd700;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎮 Conway's Game of Life 🎮</h1>
+        <div class="info">
+            <p>Vor über 50 Jahren entwickelt von John Conway. Drei einfache Regeln erschaffen komplexe Welten!</p>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="controls">
+        <button id="pauseBtn">⏸️ Pause</button>
+        <button id="resetBtn">🔄 Neustart</button>
+        <button id="clearBtn">🗑️ Leeren</button>
+        <button id="speedBtn">⚡ Schneller</button>
+    </div>
+
+    <div class="stats">
+        <span id="generation">Generation: 0</span> | 
+        <span id="population">Bevölkerung: 0</span> | 
+        <span id="speed">Geschwindigkeit: 1000ms</span>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Konfiguration
+        const CELL_SIZE = 8; // Pixel-Größe jeder Zelle
+        const COLOR_ALIVE = '#FFD700'; // Gelb
+        const COLOR_DEAD = '#000000';  // Schwarz
+        
+        let cols, rows;
+        let grid = [];
+        let isRunning = true;
+        let generation = 0;
+        let updateInterval = 1000; // 1 Sekunde
+        let intervalId;
+        
+        // Canvas-Größe an Fenster anpassen
+        function resizeCanvas() {
+            const maxWidth = window.innerWidth - 40;
+            const maxHeight = window.innerHeight - 250;
+            
+            cols = Math.floor(maxWidth / CELL_SIZE);
+            rows = Math.floor(maxHeight / CELL_SIZE);
+            
+            canvas.width = cols * CELL_SIZE;
+            canvas.height = rows * CELL_SIZE;
+            
+            initializeGrid();
+            draw();
+        }
+        
+        // Grid mit zufälligen Werten initialisieren
+        function initializeGrid() {
+            grid = [];
+            for (let i = 0; i < rows; i++) {
+                grid[i] = [];
+                for (let j = 0; j < cols; j++) {
+                    grid[i][j] = Math.random() > 0.5 ? 1 : 0;
+                }
+            }
+            generation = 0;
+            updateStats();
+        }
+        
+        // Grid zeichnen
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            for (let i = 0; i < rows; i++) {
+                for (let j = 0; j < cols; j++) {
+                    ctx.fillStyle = grid[i][j] ? COLOR_ALIVE : COLOR_DEAD;
+                    ctx.fillRect(j * CELL_SIZE, i * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                    
+                    // Gitter-Linien (optional, subtil)
+                    ctx.strokeStyle = '#111';
+                    ctx.strokeRect(j * CELL_SIZE, i * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                }
+            }
+        }
+        
+        // Lebende Nachbarn zählen
+        function countNeighbors(x, y) {
+            let count = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    if (i === 0 && j === 0) continue;
+                    
+                    const row = (x + i + rows) % rows; // Wrap around
+                    const col = (y + j + cols) % cols;
+                    count += grid[row][col];
+                }
+            }
+            return count;
+        }
+        
+        // Conway's Game of Life Regeln anwenden
+        function updateGrid() {
+            const newGrid = [];
+            
+            for (let i = 0; i < rows; i++) {
+                newGrid[i] = [];
+                for (let j = 0; j < cols; j++) {
+                    const neighbors = countNeighbors(i, j);
+                    const currentCell = grid[i][j];
+                    
+                    // Die drei Regeln von Conway:
+                    // 1. Eine lebende Zelle mit 2 oder 3 Nachbarn überlebt
+                    // 2. Eine tote Zelle mit genau 3 Nachbarn wird lebendig
+                    // 3. Alle anderen Zellen sterben oder bleiben tot
+                    
+                    if (currentCell === 1 && (neighbors === 2 || neighbors === 3)) {
+                        newGrid[i][j] = 1; // Überlebt
+                    } else if (currentCell === 0 && neighbors === 3) {
+                        newGrid[i][j] = 1; // Wird geboren
+                    } else {
+                        newGrid[i][j] = 0; // Stirbt oder bleibt tot
+                    }
+                }
+            }
+            
+            grid = newGrid;
+            generation++;
+            updateStats();
+            draw();
+        }
+        
+        // Statistiken aktualisieren
+        function updateStats() {
+            let population = 0;
+            for (let i = 0; i < rows; i++) {
+                for (let j = 0; j < cols; j++) {
+                    population += grid[i][j];
+                }
+            }
+            
+            document.getElementById('generation').textContent = `Generation: ${generation}`;
+            document.getElementById('population').textContent = `Bevölkerung: ${population}`;
+            document.getElementById('speed').textContent = `Geschwindigkeit: ${updateInterval}ms`;
+        }
+        
+        // Spiel-Loop
+        function startGame() {
+            if (intervalId) clearInterval(intervalId);
+            intervalId = setInterval(() => {
+                if (isRunning) {
+                    updateGrid();
+                }
+            }, updateInterval);
+        }
+        
+        // Event Listeners
+        document.getElementById('pauseBtn').addEventListener('click', () => {
+            isRunning = !isRunning;
+            document.getElementById('pauseBtn').textContent = isRunning ? '⏸️ Pause' : '▶️ Start';
+        });
+        
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            initializeGrid();
+            draw();
+        });
+        
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            grid = grid.map(row => row.map(() => 0));
+            generation = 0;
+            updateStats();
+            draw();
+        });
+        
+        document.getElementById('speedBtn').addEventListener('click', () => {
+            if (updateInterval === 1000) {
+                updateInterval = 500;
+            } else if (updateInterval === 500) {
+                updateInterval = 250;
+            } else if (updateInterval === 250) {
+                updateInterval = 100;
+            } else {
+                updateInterval = 1000;
+            }
+            updateStats();
+            startGame();
+        });
+        
+        // Klick auf Canvas zum manuellen Umschalten von Zellen
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((e.clientY - rect.top) / CELL_SIZE);
+            const y = Math.floor((e.clientX - rect.left) / CELL_SIZE);
+            
+            if (x >= 0 && x < rows && y >= 0 && y < cols) {
+                grid[x][y] = grid[x][y] ? 0 : 1;
+                draw();
+                updateStats();
+            }
+        });
+        
+        // Bei Fenstergrößenänderung neu initialisieren
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Initialisierung
+        resizeCanvas();
+        startGame();
+    </script>
+</body>
+</html>
